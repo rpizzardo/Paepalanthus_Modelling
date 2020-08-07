@@ -1,4 +1,4 @@
-######## Species Distribution Modelling #######
+######## Species Distribution Modelling: present and future predictions #######
 #### R. C. Pizzardo, MAY 2020 ####
 
 rm(list=ls()) #uncomment to clean your environment
@@ -21,7 +21,7 @@ data(wrld_simpl)
 
 ### Organizing the data ###
 ##Getting the distribution points
-sp <- read.csv("clean_distribution_points_REV.csv")
+sp <- read.csv("distribution_points.csv")
 dat_cl<-sp
 
 ##Flaging the data
@@ -69,8 +69,6 @@ dat_cl$lat[i] <- -1 * dat_cl$lat[i]
 
 write.csv(dat_cl, "clean_distribution_points.csv")
 
-
-#dat_cl <- read.csv("clean_distribution_points.csv")
 #_________________________________________________
 
 ### Modelling ###
@@ -85,7 +83,6 @@ biof_50 <- crop(biof_50, extent(-60, -20, -35, 5))
 biof_70 <- crop(biof_70, extent(-60, -20, -35, 5))
 
 #Collinearity test
-
 layersX <- crop(bio, extent(-60, -20, -35, 5)) #Brazil east
 v1<-vifstep(layersX)
 v2<-vifcor(layersX,th=0.8) #stablished threshold
@@ -97,8 +94,8 @@ geo <- dat_cl[,c("species","Lon","Lat")]
 geo <- geo[geo$species %in% names(which(table(geo$species) > 3)), ]
 species <- names(which(table(geo$species)!=0))
 
-i=1
 Sys.time() -> start_time_total
+
 for(i in 1:length(species)){
   Sys.time() -> start_time
   sp0 = species[i]
@@ -106,16 +103,17 @@ for(i in 1:length(species)){
   sp1$species <- 1
   coordinates(sp1) <- ~ Lon + Lat
   
+  #Present
   setwd(paste(wd, "distribution_models/1_current/2", sep=""))
   d <- sdmData(species~., sp1, predictors = current, bg = list(n=1000)) # 1000 background points 
-  m <- sdm(species~., d, methods =c("glm","brt","rf", "maxent"),
-           replication=c('boot'), n=5)
+  m <- sdm(species~., d, methods =c("glm","brt","rf", "maxent"),        # choosing 4 different methods for modelling
+           replication=c('boot'), n=5)                                  # 5 replications for each method = 20 models per species
   
-  Stat <- getEvaluation(m,stat=c('TSS', 'AUC'),opt=1, file=paste(sp0, "current.csv", sp="")) # all models
+  Stat <- getEvaluation(m,stat=c('TSS', 'AUC'),opt=1, file=paste(sp0, "current.csv", sp="")) # getting the evaluation (TSS and AUC) for each method and model of each species
   write.csv(Stat, file=paste(sp0, "evaluation.csv", sp=""))
   
   
-  x <- getVarImp(m, id=1, wtest="test.dep")
+  x <- getVarImp(m, id=1, wtest="test.dep")                         # getting the relative importance of each variable per species
   write.table(data.frame(), file=paste0(sp0, "_varimp.txt"))
   sink(paste0(sp0, "_varimp.txt"))
   print(x)
@@ -124,16 +122,19 @@ for(i in 1:length(species)){
   
   
   en <- ensemble(m, current, paste(sp0, "_ensemble.tif", sep="") ,
-                 setting=list(method='weighted',stat=c("AUC"))) # ensemble ("fusion model")
+                 setting=list(method='weighted',stat=c("AUC")))      # ensemble ("fusion model")
   
+  #2070
   setwd(paste(wd, "distribution_models/1_future_70/", sep=""))
   enf_70 <- ensemble(m, biof_70, paste(sp0, "_ensemble_70.tif", sep=""),
                      setting = list(method='weighted', stat=c("AUC")))
   
+  #2050
   setwd(paste(wd, "distribution_models/1_future_50/", sep=""))
   enf_50 <- ensemble(m, biof_50, paste(sp0, "_ensemble_50.tif", sep=""),
                      setting = list(method='weighted', stat=c("AUC")))
   
+  #ploting pdfs for present, 2050 and 2070:  roc curve (AUC), ensemble models and variable importance (graph) 
   setwd(paste(wd, "distribution_models/1_pdfs_current/", sep=""))
   pdf(file=paste(sp0, "_roc", ".pdf", sep=""), width = 8, height = 5)
   roc(m, 1)
@@ -205,11 +206,12 @@ print(end_time_total-start_time_total)
 
 #____________________________________________
 
-### Stacking the models according to the bioregions ###
+### Stacking the models according to the bioregions of campo rupestre ###
 
 ##For the present
 setwd(paste(wd, "distribution_models/1_current/", sep=""))
 
+#getting the models (south distribution)
 south <- c( "Paepalanthus bryoides_ensemble.tif", "Paepalanthus comans_ensemble.tif",
             "Paepalanthus eriophaeus_ensemble.tif", "Paepalanthus macrocephalus_ensemble.tif",
             "Paepalanthus scirpeus_ensemble.tif", "Paepalanthus nigrescens_ensemble.tif") 
@@ -220,12 +222,13 @@ south_sd <- calc(south, fun=sd) #standad deviation
 writeRaster(south_final, "south_final.tif")
 writeRaster(south_sd, "south_sd.tif")
 
+#getting the models (north distribution)
 north <- c("Paepalanthus barbulatus_ensemble.tif", "Paepalanthus cinereus_ensemble.tif",
            "Paepalanthus harleyi_ensemble.tif", "Paepalanthus macrocaulon var. contasensis_ensemble.tif",
            "Paepalanthus pulvinatus_ensemble.tif", "Paepalanthus spathulatus_ensemble.tif")
 
 north <- stack(north)
-north_final <- mean(north) #mean
+north_final <- mean(north) # mean
 north_sd <- calc(north, fun=sd) #standad deviation
 writeRaster(north_final, "north_final.tif")
 writeRaster(north_sd, "north_sd.tif")
